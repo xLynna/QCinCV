@@ -26,7 +26,7 @@ def baseline(N, W, c):
     N : int
         Number of nodes in the graph. The side length of the square permutation 
         matrix X.
-    W : numpy.ndarray, size of (N**2, N**2)
+    W : numpy.ndarray, size of (N**2, N**2), symmetric
         Matrix of weights.
     c : numpy.ndarray, size of (N**2, 1)
         Vector of biases.
@@ -67,8 +67,7 @@ def baseline(N, W, c):
     bias=qu.reshape(N**2).tolist()
     indicies = np.arange(N**2)
     indices_pairs = itertools.product(indicies, indicies)
-    J = dict(zip(indices_pairs, W.flatten()))
-    
+    J = dict(zip(indices_pairs, Q.flatten()))
     
     #sampler = ExactSolver()
    # response = sampler.sample_ising(bias,J)    
