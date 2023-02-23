@@ -7,94 +7,67 @@ Created on Thu Jul  2 13:39:52 2020
 """
 
 
-
 # ------ Import necessary packages ----
-from dwave.system import DWaveSampler, EmbeddingComposite , VirtualGraphComposite
-
+import pickle
+import itertools
+import dwave.inspector
 import neal
 import numpy as np
 from dimod.reference.samplers import ExactSolver
-import dwave.inspector
+from dwave.system import (DWaveSampler, EmbeddingComposite,
+                          VirtualGraphComposite)
 
 
+def baseline(N, W, c):
+    """Baseline model for the QGM problem
+    
+    Parameters
+    ----------
+    N : int
+        Number of nodes in the graph. The side length of the square permutation 
+        matrix X.
+    W : numpy.ndarray, size of (N**2, N**2)
+        Matrix of weights.
+    c : numpy.ndarray, size of (N**2, 1)
+        Vector of biases.
 
+    Returns
+    -------
+    Result : list
+        List of results from the D-Wave sampler.
+    response.info : dict
+        Dictionary with information about the D-Wave sampler.
+    SimulatedResult : list
+        List of results from the simulated annealing sampler.
+    
+    """
 
-import pickle
+    # lower bound of penalty parameter
+    lambda0 = np.sum(np.abs(W)) + np.sum(np.abs(c)) 
+    lambda0 /= 2
 
+    # constraints
+    a1 = np.tensordot(np.eye(N), np.ones((1, N)), axes=0).reshape(N,-1)
+    a2 = np.tensordot(np.ones((1, N)), np.eye(N), axes=0).reshape(-1, N).T
+    A = np.vstack((a1, a2))
+    b = np.ones((2*N, 1))
 
+    # regularisation matrix and vector
+    regularisationMatrix = lambda0 * A.T @ A
+    regularisationVector = -2 * lambda0 * (b.T @ A).reshape(-1, 1)
 
+    W += regularisationMatrix # W is symmetric
+    c += regularisationVector
 
-def baseline(N,W,c): 
-    
-    lambdaconst=0
-    
-    for k in range(N**2):
-          for j in range(N**2):
-              lambdaconst += np.abs(W[k,j])
-              
-          lambdaconst+=np.abs(c[k])
-    lambdaconst= lambdaconst/2   
-    
-   
-    
-    columnSum= np.zeros((N**2,N))
-    rowSum= np.zeros((N**2,N))
-    for i in range(N):
-        for j in range(N):
-            for k in range(N):
-                
-                if j==k:
-                    columnSum[N*i+j,k]=  1        
-                if i==k:
-                    rowSum[N*i+j,k]=1
-    
-   
-      
-      
-        
-    regularisationMatrix= np.zeros((N**2,N**2 ))
-    regularisationVector= np.zeros((N**2,1 ))
-    
-    
-    for i in range(N):
-                regularisationMatrix +=lambdaconst* columnSum[:,i].reshape(N**2,1)@  columnSum[:,i].reshape(1,N**2)
-                regularisationVector += -(2* ( lambdaconst) * columnSum[:, i ]).reshape((N**2,1))
-                regularisationMatrix +=(lambdaconst)* rowSum[:,i].reshape(N**2,1)@  rowSum[:,i].reshape(1,N**2)
-                regularisationVector += -(2* ( lambdaconst) * rowSum[:, i ]).reshape((N**2,1))
-        
-    
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    W= W+ regularisationMatrix
-    c= c+ regularisationVector
+    # switch x to {-1, 1}
     Q= W/4 
-    
-    qu= c/2 + (np.sum( W, axis=0, keepdims= True ).T + np.sum(W,axis= 1, keepdims=True) )/4
-    
-    for i in range(0,N**2):
-        Q[i,i]=0
-    
-    
-        
-    
+    np.fill_diagonal(Q, 0)
+    qu= 0.5 * (c + np.sum(W, axis= 1, keepdims=True))
+
     bias=qu.reshape(N**2).tolist()
-    
-    J={}
-    
-    for i in range(N**2):
-    
-        for j in range(N**2):
-            
-            J.update( {(i,j): Q[i,j]})
-    
+    indicies = np.arange(N**2)
+    indices_pairs = itertools.product(indicies, indicies)
+    J = dict(zip(indices_pairs, W.flatten()))
     
     
     #sampler = ExactSolver()
@@ -115,28 +88,27 @@ def baseline(N,W,c):
    #             Result.append([datum.sample,  datum.energy,  datum.num_occurrences]) 
 
     
-    
+    # Local Solver
     solver = neal.SimulatedAnnealingSampler()
     response = solver.sample_ising(bias, J, num_reads=500)
     SimulatedResult=[]
     for datum in response.data(['sample', 'energy', 'num_occurrences']):   
-              #  print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
+                print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
                 SimulatedResult.append([datum.sample,  datum.energy,  datum.num_occurrences]) 
     
-    
-    
 
-    chain = np.max (bias)
+    # chain = np.max(bias)
 
-    sampler = EmbeddingComposite(DWaveSampler())
-    response = sampler.sample_ising(bias,J,chain_strength=chain ,num_reads=500, return_embedding=True, anneal_schedule=((0.0,0.0),(40.0,0.5),(140.0,0.5),(180.0,1.0)))
+    # sampler = EmbeddingComposite(DWaveSampler())
+    # response = sampler.sample_ising(bias, J, num_reads=500, chain_strength=chain, return_embedding=True, anneal_schedule=((0.0,0.0),(40.0,0.5),(140.0,0.5),(180.0,1.0)))
 
-    dwave.inspector.show(response)
-    Result=[]
-    for datum in response.data(['sample', 'energy', 'num_occurrences','chain_break_fraction']):   
-            print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
-            Result.append([datum.sample,  datum.energy,  datum.num_occurrences, datum.chain_break_fraction])
+    # dwave.inspector.show(response)
+    # Result=[]
+    # for datum in response.data(['sample', 'energy', 'num_occurrences','chain_break_fraction']):   
+    #         print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
+    #         Result.append([datum.sample,  datum.energy,  datum.num_occurrences, datum.chain_break_fraction])
 
-    return [Result,response.info,SimulatedResult]
+    # return [Result, response.info, SimulatedResult]
+    return [response.info, SimulatedResult]
 
 
