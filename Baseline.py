@@ -47,7 +47,9 @@ def baseline(N, W, c):
     lambda0 /= 2
 
     # constraints
+    # Row Sum transpose
     a1 = np.tensordot(np.eye(N), np.ones((1, N)), axes=0).reshape(N,-1)
+    # Column Sum transpose
     a2 = np.tensordot(np.ones((1, N)), np.eye(N), axes=0).reshape(-1, N).T
     A = np.vstack((a1, a2))
     b = np.ones((2*N, 1))
@@ -92,8 +94,8 @@ def baseline(N, W, c):
     response = solver.sample_ising(bias, J, num_reads=500)
     SimulatedResult=[]
     for datum in response.data(['sample', 'energy', 'num_occurrences']):   
-                print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
-                SimulatedResult.append([datum.sample,  datum.energy,  datum.num_occurrences]) 
+        #print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
+        SimulatedResult.append([datum.sample,  datum.energy,  datum.num_occurrences]) 
     
 
     # chain = np.max(bias)
