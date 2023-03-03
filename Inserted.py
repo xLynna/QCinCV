@@ -7,49 +7,111 @@ import dwave.inspector
 
 import pickle
 
-
-
 #sum of Pauli matrices equals constant. 
 #Since variables were inserted we are in a lower dimension
 
-def newPauli(position, N ):
-   
-    result= np.zeros(((N-1)**2+1))    
 
-    result[(N-1)**2]=1
-    if position==0:
-        result[(N-1)**2]= 2-N
-        for k in range((N-1)**2):
-            result[k]+= 1
-            
-        return result
+def reducedW(N, W):
+    """Returns the reduced W matrix.
+    
+    Parameters
+    ----------
+    N : int
+        Number of nodes in the graph. The side length of the square permutation
+        matrix X.
+    W : numpy.ndarray, size of (N**2, N**2), symmetric
+        Matrix of weights.
+    
+    Returns
+    -------
+    W_reduced : numpy.ndarray, size of ((N-1)**2, (N-1)**2), symmetric
+        Matrix of weights in the reduced dimension.
+
+    """
+
+    # The new reduced matrix composes of 4 parts (divided by columns) of the 
+    # original matrix, each part consists of 4 subparts (divided by rows).
+    # The parts are divided due to how we reudced the dimension of the matrix.
+    # And we vectorise the matrix
+
+    ONE = np.array([0])
+    ROWS = np.array(range(1, N)) # if symmetrical, this is columns
+    COLUMNS = np.array(range(N, N**2, N)) # if symmetrical, this is rows
+    REST = np.delete(np.array(range(N, N**2)), COLUMNS-N)
+
+    # We highly manipulate the fact of symmetry to accelerate the fetch of data.
+    # Variation from the first column of original W
+
+    #REST, we start here first to define the shape of W_reduced
+    ROW_REST = W[REST, :]
+    #!!!
+    W_reduced = ROW_REST[:, REST] \
+                - np.kron(np.ones(N-1), ROW_REST[:, ROWS]) \
+                - np.repeat(ROW_REST[:, COLUMNS], N-1, axis = 1)
+    
+    # integrate the weight of the first column(row) into the reduced matrix
+    # broadcating
+    ROW_ONE = W[ONE, :]
+    W_reduced += ROW_ONE[:, REST] \
+                - np.kron(np.ones(N-1), ROW_ONE[:, ROWS]) \
+                - np.repeat(ROW_ONE[:, COLUMNS], N-1, axis = 1)
+    
+    # second to N columns(rows)
+    ROW_2_N = W[ROWS, :]
+    W_reduced -= np.kron(np.ones((N-1, 1)), 
+                            ROW_2_N[:, REST]
+                            - np.kron(np.ones(N-1), ROW_2_N[:, ROWS])
+                            - np.repeat(ROW_2_N[:, COLUMNS], N-1, axis = 1))
+    
+    # First column(row) of each batch, corresponding to the summation of the first row
+    ROW_EVERY_N = W[COLUMNS, :]
+    W_reduced -= np.repeat(ROW_EVERY_N[:, REST]
+                            - np.kron(np.ones(N-1), ROW_EVERY_N[:, ROWS])
+                            - np.repeat(ROW_EVERY_N[:, COLUMNS], N-1, axis = 1)
+                            , N-1, axis = 0)
+    
+    
+    
+    W_reduced += W[ONE, ONE] - (np.kron(np.ones(N-1), W[ONE, ROWS]) + np.repeat(W[ONE, COLUMNS], N-1) - W[REST, ONE]).reshape(-1, 1)
+
+    return W_reduced
     
 
-    if position <N:
+def newPauli(position, N):
+    """Returns the Pauli matrix of a given position in the permutation matrix X.
+    
+    Parameters
+    ----------
+    position : int
+        Position of the Pauli matrix in the permutation matrix X.
+    N : int
+        Number of nodes in the graph. The side length of the square permutation
+        matrix X.
+    
+    Returns
+    -------
+    result : numpy.ndarray, size of (N**2, )
 
-       for k in range(N-1):
-           result[position % N-1 + k *(N-1)]-= 1
-       return result
-    if position%N==0:
+    """
+    if position == 0:
+        result = np.ones(((N-1)**2 + 1))
+        result[(N-1)**2] = 2-N
 
-       for k in range(N-1):
-           result[(position//(N)-1)*(N-1) +k] -= 1
-       return result
+    elif position < N:
+        pos_vec = np.zeros(N-1)
+        pos_vec[position-1] = -1
+        result = np.hstack((np.tensordot(np.ones(N-1), pos_vec, axes=0).reshape(-1), 1))
+
+    elif position % N==0:
+        pos_vec = np.zeros(N-1)
+        pos_vec[position//N-1] = -1
+        result = np.hstack((np.repeat(pos_vec, N-1), 1))
+    
     else:
-        result[(N-1)**2]=0
+        result = np.zeros(((N-1)**2 + 1))
+        result[position - position//N - N]= 1 # 
 
-        result[position- position//N - N]= 1
-        return result
-    return  result
-
-
-
-
-
-
-
-
-   
+    return result
 
 
    
@@ -74,7 +136,7 @@ def inserted(N,W,c):
     
     
   
-    
+    #rowwise
     
     optimizing=np.zeros((N-1)**2)
     
@@ -122,7 +184,7 @@ def inserted(N,W,c):
                 regularisationMatrix +=( 1/2 *Lambdaj[1,i] + 1/2 *MaxGrad)* rowSum[:,i].reshape((N-1)**2,1)@  rowSum[:,i].reshape(1,(N-1)**2)
                 regularisationVector += -( ( 1/2 *Lambdaj[1,i] + 1/2* MaxGrad) * rowSum[:, i ]).reshape(((N-1)**2,1))
     
-    
+    # diff
     regularisationMatrix+= MaxGrad/2 * np.ones(((N-1)**2,(N-1)**2))
     regularisationVector+= -MaxGrad/2 * (N-1+N-2 ) * np.ones(( (N-1)**2,1) )
     
@@ -164,19 +226,17 @@ def inserted(N,W,c):
     for datum in response.data(['sample', 'energy', 'num_occurrences']):   
               #  print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
                 SimulatedResult.append([datum.sample,  datum.energy,  datum.num_occurrences]) 
-
-
    
-    chain = np.max (bias)
+    # chain = np.max (bias)
 
 
-    sampler = EmbeddingComposite(DWaveSampler())
-    response = sampler.sample_ising(bias,J,chain_strength=chain ,num_reads=500, return_embedding=True, anneal_schedule=((0.0,0.0),(40.0,0.5),(140.0,0.5),(180.0,1.0)))
-    dwave.inspector.show(response)
-    Result=[]
-    for datum in response.data(['sample', 'energy', 'num_occurrences','chain_break_fraction']):   
-            print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
-            Result.append([datum.sample,  datum.energy,  datum.num_occurrences, datum.chain_break_fraction])
+    # sampler = EmbeddingComposite(DWaveSampler())
+    # response = sampler.sample_ising(bias,J,chain_strength=chain ,num_reads=500, return_embedding=True, anneal_schedule=((0.0,0.0),(40.0,0.5),(140.0,0.5),(180.0,1.0)))
+    # dwave.inspector.show(response)
+    # Result=[]
+    # for datum in response.data(['sample', 'energy', 'num_occurrences','chain_break_fraction']):   
+    #         print(datum.sample, "Energy: ", datum.energy, "Occurrences: ", datum.num_occurrences)
+    #         Result.append([datum.sample,  datum.energy,  datum.num_occurrences, datum.chain_break_fraction])
 
 
-    return [Result,response.info,SimulatedResult]
+    return [response.info,SimulatedResult]
