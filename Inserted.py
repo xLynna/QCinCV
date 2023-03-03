@@ -11,7 +11,7 @@ import pickle
 #Since variables were inserted we are in a lower dimension
 
 
-def reducedW(N, W):
+def reducedWandC(N, W, c):
     """Returns the reduced W matrix.
     
     Parameters
@@ -44,7 +44,6 @@ def reducedW(N, W):
 
     #REST, we start here first to define the shape of W_reduced
     ROW_REST = W[REST, :]
-    #!!!
     W_reduced = ROW_REST[:, REST] \
                 - np.kron(np.ones(N-1), ROW_REST[:, ROWS]) \
                 - np.repeat(ROW_REST[:, COLUMNS], N-1, axis = 1)
@@ -70,12 +69,17 @@ def reducedW(N, W):
                             - np.repeat(ROW_EVERY_N[:, COLUMNS], N-1, axis = 1)
                             , N-1, axis = 0)
     
-    
-    
     W_reduced += W[ONE, ONE] - (np.kron(np.ones(N-1), W[ONE, ROWS]) + np.repeat(W[ONE, COLUMNS], N-1) - W[REST, ONE]).reshape(-1, 1)
 
-    return W_reduced
-    
+    # From the linear term during W reduction
+    cols_W = (2 - N) * W[:, ONE] + np.sum(W[:, ROWS] + W[:, COLUMNS], axis = 1, keepdims = True)
+    C_reduced = cols_W[REST] - np.kron(np.ones((N-1, 1)), cols_W[ROWS]) - np.repeat(cols_W[COLUMNS], N-1, axis = 0) + cols_W[ONE]
+
+    # Reduce C
+    C_reduced = 2 * C_reduced + c[ONE] - np.kron(np.ones((N-1, 1)), c[ROWS]) - np.repeat(c[COLUMNS], N-1, axis = 0) + c[REST]
+
+    return W_reduced, C_reduced
+     
 
 def newPauli(position, N):
     """Returns the Pauli matrix of a given position in the permutation matrix X.
